@@ -1,6 +1,6 @@
 # Claude Code Status Line
 
-A custom status line for [Claude Code](https://claude.com/claude-code) that displays model info, token usage, rate limits, and reset times in a single compact line.
+A custom status line for [Claude Code](https://claude.com/claude-code) that displays model info, token usage, rate limits, and reset times in a single compact line. It runs as an external shell command, so it does not slow down Claude Code or consume any extra tokens.
 
 ## Screenshot
 
@@ -14,7 +14,7 @@ A custom status line for [Claude Code](https://claude.com/claude-code) that disp
 | **CWD@Branch** | Current folder name and git branch (if in a repo) |
 | **Tokens** | Used / total context window tokens |
 | **% Used / Remain** | Context window usage percentage |
-| **Thinking** | Whether extended thinking is enabled |
+| **Effort** | Reasoning effort level (low, med, high) |
 | **5h** | 5-hour rate limit usage with progress bar and reset time |
 | **7d** | 7-day rate limit usage with progress bar and reset time |
 | **Extra** | Extra usage credits spent / limit (if enabled) |
