@@ -38,30 +38,15 @@ format_commas() {
     printf "%'d" "$1"
 }
 
-# Build a colored progress bar
-# Usage: build_bar <pct> <width>
-build_bar() {
+# Return color escape based on usage percentage
+# Usage: usage_color <pct>
+usage_color() {
     local pct=$1
-    local width=$2
-    [ "$pct" -lt 0 ] 2>/dev/null && pct=0
-    [ "$pct" -gt 100 ] 2>/dev/null && pct=100
-
-    local filled=$(( pct * width / 100 ))
-    local empty=$(( width - filled ))
-
-    # Color based on usage level
-    local bar_color
-    if [ "$pct" -ge 90 ]; then bar_color="$red"
-    elif [ "$pct" -ge 70 ]; then bar_color="$yellow"
-    elif [ "$pct" -ge 50 ]; then bar_color="$orange"
-    else bar_color="$green"
+    if [ "$pct" -ge 90 ]; then echo "$red"
+    elif [ "$pct" -ge 70 ]; then echo "$orange"
+    elif [ "$pct" -ge 50 ]; then echo "$yellow"
+    else echo "$green"
     fi
-
-    local filled_str="" empty_str=""
-    for ((i=0; i<filled; i++)); do filled_str+="●"; done
-    for ((i=0; i<empty; i++)); do empty_str+="○"; done
-
-    printf "${bar_color}${filled_str}${dim}${empty_str}${reset}"
 }
 
 # ===== Extract data from JSON =====
@@ -113,15 +98,13 @@ if [ -n "$cwd" ]; then
     out+="${cyan}${display_dir}${reset}"
     if [ -n "$git_branch" ]; then
         out+="${dim}@${reset}${green}${git_branch}${reset}"
+        git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
+        [ -n "$git_stat" ] && out+=" ${dim}(${reset}${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}${dim})${reset}"
     fi
 fi
 
 out+=" ${dim}|${reset} "
-out+="${orange}${used_tokens}/${total_tokens}${reset}"
-out+=" ${dim}|${reset} "
-out+="${green}${pct_used}%${reset} ${dim}used${reset}"
-out+=" ${dim}|${reset} "
-out+="${cyan}${pct_remain}%${reset} ${dim}remain${reset}"
+out+="${orange}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${green}${pct_used}%${reset}${dim})${reset}"
 out+=" ${dim}|${reset} "
 out+="effort: "
 case "$effort_level" in
@@ -290,24 +273,22 @@ format_reset_time() {
 sep=" ${dim}|${reset} "
 
 if [ -n "$usage_data" ] && echo "$usage_data" | jq -e . >/dev/null 2>&1; then
-    bar_width=6
-
     # ---- 5-hour (current) ----
     five_hour_pct=$(echo "$usage_data" | jq -r '.five_hour.utilization // 0' | awk '{printf "%.0f", $1}')
     five_hour_reset_iso=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
     five_hour_reset=$(format_reset_time "$five_hour_reset_iso" "time")
-    five_hour_bar=$(build_bar "$five_hour_pct" "$bar_width")
+    five_hour_color=$(usage_color "$five_hour_pct")
 
-    out+="${sep}${white}5h${reset} ${five_hour_bar} ${cyan}${five_hour_pct}%${reset}"
+    out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
     [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
 
     # ---- 7-day (weekly) ----
     seven_day_pct=$(echo "$usage_data" | jq -r '.seven_day.utilization // 0' | awk '{printf "%.0f", $1}')
     seven_day_reset_iso=$(echo "$usage_data" | jq -r '.seven_day.resets_at // empty')
     seven_day_reset=$(format_reset_time "$seven_day_reset_iso" "datetime")
-    seven_day_bar=$(build_bar "$seven_day_pct" "$bar_width")
+    seven_day_color=$(usage_color "$seven_day_pct")
 
-    out+="${sep}${white}7d${reset} ${seven_day_bar} ${cyan}${seven_day_pct}%${reset}"
+    out+="${sep}${white}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
     [ -n "$seven_day_reset" ] && out+=" ${dim}@${seven_day_reset}${reset}"
 
     # ---- Extra usage ----
@@ -318,9 +299,9 @@ if [ -n "$usage_data" ] && echo "$usage_data" | jq -e . >/dev/null 2>&1; then
         extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // 0' | awk '{printf "%.2f", $1/100}')
         extra_used="${extra_used:-0.00}"
         extra_limit="${extra_limit:-0.00}"
-        extra_bar=$(build_bar "$extra_pct" "$bar_width")
+        extra_color=$(usage_color "$extra_pct")
 
-        out+="${sep}${white}extra${reset} ${extra_bar} ${cyan}\$${extra_used}/\$${extra_limit}${reset}"
+        out+="${sep}${white}extra${reset} ${extra_color}\$${extra_used}/\$${extra_limit}${reset}"
     fi
 fi
 

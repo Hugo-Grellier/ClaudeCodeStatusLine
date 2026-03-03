@@ -11,15 +11,14 @@ A custom status line for [Claude Code](https://claude.com/claude-code) that disp
 | Segment | Description |
 |---------|-------------|
 | **Model** | Current model name (e.g., Opus 4.6) |
-| **CWD@Branch** | Current folder name and git branch (if in a repo) |
-| **Tokens** | Used / total context window tokens |
-| **% Used / Remain** | Context window usage percentage |
+| **CWD@Branch** | Current folder name, git branch, and file changes (+/-) |
+| **Tokens** | Used / total context window tokens (% used) |
 | **Effort** | Reasoning effort level (low, med, high) |
-| **5h** | 5-hour rate limit usage with progress bar and reset time |
-| **7d** | 7-day rate limit usage with progress bar and reset time |
+| **5h** | 5-hour rate limit usage percentage and reset time |
+| **7d** | 7-day rate limit usage percentage and reset time |
 | **Extra** | Extra usage credits spent / limit (if enabled) |
 
-Progress bars change color based on usage: green → orange → yellow → red.
+Usage percentages are color-coded: green (<50%) → yellow (≥50%) → orange (≥70%) → red (≥90%).
 
 ## Requirements
 
