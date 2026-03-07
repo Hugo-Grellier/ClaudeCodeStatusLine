@@ -68,7 +68,7 @@ $usedComma   = Format-Commas $current
 $remainComma = Format-Commas ($size - $current)
 
 # Check reasoning effort
-$effortLevel = "high"
+$effortLevel = "medium"
 if ($env:CLAUDE_CODE_EFFORT_LEVEL) {
     $effortLevel = $env:CLAUDE_CODE_EFFORT_LEVEL
 } else {

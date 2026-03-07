@@ -77,7 +77,7 @@ remain_comma=$(format_commas $(( size - current )))
 
 # Check reasoning effort
 settings_path="$HOME/.claude/settings.json"
-effort_level="high"
+effort_level="medium"
 if [ -n "$CLAUDE_CODE_EFFORT_LEVEL" ]; then
     effort_level="$CLAUDE_CODE_EFFORT_LEVEL"
 elif [ -f "$settings_path" ]; then
