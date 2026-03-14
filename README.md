@@ -30,7 +30,7 @@ Usage percentages are color-coded: green (<50%) → yellow (≥50%) → orange (
 
 ### Windows
 
-- PowerShell 7+ (for ANSI escape support)
+- PowerShell 5.1+ (included by default on Windows 10/11)
 - `git` in PATH (for branch/diff info)
 - Claude Code with OAuth authentication (Pro/Max subscription)
 
@@ -78,14 +78,27 @@ Claude Code will save the script and configure `settings.json` for you automatic
 
 2. Add the status line config to `%USERPROFILE%\.claude\settings.json`:
 
+   **PowerShell / CMD:**
    ```json
    {
      "statusLine": {
        "type": "command",
-       "command": "pwsh -NoProfile -File \"%USERPROFILE%\\.claude\\statusline.ps1\""
+       "command": "powershell -NoProfile -File \"%USERPROFILE%\\.claude\\statusline.ps1\""
      }
    }
    ```
+
+   **Git Bash / WSL bash:**
+   ```json
+   {
+     "statusLine": {
+       "type": "command",
+       "command": "powershell -NoProfile -File \"$USERPROFILE\\.claude\\statusline.ps1\""
+     }
+   }
+   ```
+
+   > **Note:** Use `%USERPROFILE%` in CMD/PowerShell or `$USERPROFILE` in bash shells. The `%VAR%` syntax does not expand in bash.
 
 3. Restart Claude Code.
 
