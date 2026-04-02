@@ -188,7 +188,16 @@ function Get-OAuthToken {
     return $null
 }
 
-# ===== Usage limits with caching =====
+# ===== Usage limits =====
+# First, try to use rate_limits data provided directly by Claude Code in the JSON input.
+$builtinFiveHourPct = $data.rate_limits.five_hour.used_percentage
+$builtinFiveHourReset = $data.rate_limits.five_hour.resets_at
+$builtinSevenDayPct = $data.rate_limits.seven_day.used_percentage
+$builtinSevenDayReset = $data.rate_limits.seven_day.resets_at
+
+$useBuiltin = ($null -ne $builtinFiveHourPct) -or ($null -ne $builtinSevenDayPct)
+
+# Fall back to cached API call only when Claude Code didn't supply rate_limits data
 $cacheDir = Join-Path $env:TEMP "claude"
 $cacheFile = Join-Path $cacheDir "statusline-usage-cache.json"
 $cacheMaxAge = 60  # seconds between API calls
@@ -198,37 +207,45 @@ if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -
 $needsRefresh = $true
 $usageData = $null
 
-# Check cache
-if (Test-Path $cacheFile) {
-    $cacheMtime = (Get-Item $cacheFile).LastWriteTime
-    $cacheAge = ((Get-Date) - $cacheMtime).TotalSeconds
-    if ($cacheAge -lt $cacheMaxAge) {
-        $needsRefresh = $false
-        $usageData = Get-Content $cacheFile -Raw
+if (-not $useBuiltin) {
+    # Check cache — shared across all Claude Code instances to avoid rate limits
+    if (Test-Path $cacheFile) {
+        $cacheMtime = (Get-Item $cacheFile).LastWriteTime
+        $cacheAge = ((Get-Date) - $cacheMtime).TotalSeconds
+        if ($cacheAge -lt $cacheMaxAge) {
+            $needsRefresh = $false
+            $usageData = Get-Content $cacheFile -Raw
+        }
     }
-}
 
-# Fetch fresh data if cache is stale
-if ($needsRefresh) {
-    $token = Get-OAuthToken
-    if ($token) {
-        try {
-            $headers = @{
-                "Accept"         = "application/json"
-                "Content-Type"   = "application/json"
-                "Authorization"  = "Bearer $token"
-                "anthropic-beta" = "oauth-2025-04-20"
-                "User-Agent"     = "claude-code/2.1.34"
-            }
-            $response = Invoke-RestMethod -Uri "https://api.anthropic.com/api/oauth/usage" `
-                -Headers $headers -Method Get -TimeoutSec 10 -ErrorAction Stop
-            $usageData = $response | ConvertTo-Json -Depth 10
-            $usageData | Set-Content $cacheFile -Force
-        } catch {}
-    }
-    # Fall back to stale cache
-    if (-not $usageData -and (Test-Path $cacheFile)) {
-        $usageData = Get-Content $cacheFile -Raw
+    # Fetch fresh data if cache is stale
+    if ($needsRefresh) {
+        # Touch cache immediately (stampede lock)
+        if (Test-Path $cacheFile) {
+            (Get-Item $cacheFile).LastWriteTime = Get-Date
+        } else {
+            New-Item -ItemType File -Path $cacheFile -Force | Out-Null
+        }
+        $token = Get-OAuthToken
+        if ($token) {
+            try {
+                $headers = @{
+                    "Accept"         = "application/json"
+                    "Content-Type"   = "application/json"
+                    "Authorization"  = "Bearer $token"
+                    "anthropic-beta" = "oauth-2025-04-20"
+                    "User-Agent"     = "claude-code/2.1.34"
+                }
+                $response = Invoke-RestMethod -Uri "https://api.anthropic.com/api/oauth/usage" `
+                    -Headers $headers -Method Get -TimeoutSec 10 -ErrorAction Stop
+                $usageData = $response | ConvertTo-Json -Depth 10
+                $usageData | Set-Content $cacheFile -Force
+            } catch {}
+        }
+        # Fall back to stale cache
+        if (-not $usageData -and (Test-Path $cacheFile)) {
+            $usageData = Get-Content $cacheFile -Raw
+        }
     }
 }
 
@@ -245,9 +262,39 @@ function Format-ResetTime([string]$isoStr, [string]$style) {
     } catch { return $null }
 }
 
+# Format Unix epoch reset time to compact local time
+function Format-EpochResetTime([object]$epoch, [string]$style) {
+    if ($null -eq $epoch -or "$epoch" -eq "null" -or "$epoch" -eq "") { return $null }
+    try {
+        $dt = [DateTimeOffset]::FromUnixTimeSeconds([long]$epoch).LocalDateTime
+        switch ($style) {
+            "time"     { return $dt.ToString("h:mmtt").ToLower() }
+            "datetime" { return $dt.ToString("MMM d, h:mmtt").ToLower() }
+            default    { return $dt.ToString("MMM d").ToLower() }
+        }
+    } catch { return $null }
+}
+
 $sep = " ${dim}|${reset} "
 
-if ($usageData) {
+if ($useBuiltin) {
+    # ---- Use rate_limits data provided directly by Claude Code in JSON input ----
+    if ($null -ne $builtinFiveHourPct) {
+        $fiveHourPct = [math]::Floor([double]$builtinFiveHourPct)
+        $fiveHourColor = Get-UsageColor $fiveHourPct
+        $out += "${sep}${white}5h${reset} ${fiveHourColor}${fiveHourPct}%${reset}"
+        $fiveHourReset = Format-EpochResetTime $builtinFiveHourReset "time"
+        if ($fiveHourReset) { $out += " ${dim}@${fiveHourReset}${reset}" }
+    }
+
+    if ($null -ne $builtinSevenDayPct) {
+        $sevenDayPct = [math]::Floor([double]$builtinSevenDayPct)
+        $sevenDayColor = Get-UsageColor $sevenDayPct
+        $out += "${sep}${white}7d${reset} ${sevenDayColor}${sevenDayPct}%${reset}"
+        $sevenDayReset = Format-EpochResetTime $builtinSevenDayReset "datetime"
+        if ($sevenDayReset) { $out += " ${dim}@${sevenDayReset}${reset}" }
+    }
+} elseif ($usageData) {
     try {
         $usage = if ($usageData -is [string]) { $usageData | ConvertFrom-Json } else { $usageData }
 
