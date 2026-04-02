@@ -1,4 +1,5 @@
 #!/bin/bash
+# Source: https://github.com/daniel3303/ClaudeCodeStatusLine
 # Single line: Model | tokens | %used | %remain | think | 5h bar @reset | 7d bar @reset | extra
 
 set -f  # disable globbing

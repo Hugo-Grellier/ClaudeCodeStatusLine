@@ -1,3 +1,5 @@
+# Source: https://github.com/daniel3303/ClaudeCodeStatusLine
+
 $VERSION = "1.2.0"
 # Single line: Model | tokens | %used | %remain | think | 5h bar @reset | 7d bar @reset | extra
 
