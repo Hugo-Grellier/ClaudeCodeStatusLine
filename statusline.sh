@@ -27,7 +27,7 @@ reset='\033[0m'
 format_tokens() {
     local num=$1
     if [ "$num" -ge 1000000 ]; then
-        awk "BEGIN {printf \"%.1fm\", $num / 1000000}"
+        awk "BEGIN {v=sprintf(\"%.1f\",$num/1000000)+0; if(v==int(v)) printf \"%dm\",v; else printf \"%.1fm\",v}"
     elif [ "$num" -ge 1000 ]; then
         awk "BEGIN {printf \"%.0fk\", $num / 1000}"
     else
@@ -71,6 +71,7 @@ version_gt() {
 }
 # ===== Extract data from JSON =====
 model_name=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+model_name=$(echo "$model_name" | sed 's/ *(\([0-9.]*[kKmM]*\) context)/ \1/')  # "(1M context)" → "1M"
 
 # Context window
 size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')

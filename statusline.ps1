@@ -27,7 +27,11 @@ $reset  = "${esc}[0m"
 
 # Format token counts (e.g., 50k / 200k)
 function Format-Tokens([long]$num) {
-    if ($num -ge 1000000) { return "{0:F1}m" -f ($num / 1000000) }
+    if ($num -ge 1000000) {
+        $val = [math]::Round($num / 1000000, 1)
+        if ([math]::Abs($val - [math]::Round($val)) -lt 0.05) { return "{0:F0}m" -f $val }
+        return "{0:F1}m" -f $val
+    }
     elseif ($num -ge 1000) { return "{0:F0}k" -f ($num / 1000) }
     else { return "$num" }
 }
@@ -65,6 +69,7 @@ function Test-VersionGreaterThan([string]$a, [string]$b) {
 $data = $input | ConvertFrom-Json
 
 $modelName = if ($data.model.display_name) { $data.model.display_name } else { "Claude" }
+$modelName = ($modelName -replace '\s*\((\d+\.?\d*[kKmM])\s+context\)', ' $1').Trim()  # "(1M context)" → "1M"
 
 # Context window
 $size = if ($data.context_window.context_window_size) { [long]$data.context_window.context_window_size } else { 200000 }
