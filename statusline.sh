@@ -448,46 +448,35 @@ if [ -n "$lines_added" ] && [ "$lines_added" != "null" ] && [ "$lines_added" != 
     [ -n "$lines_removed" ] && [ "$lines_removed" != "null" ] && [ "$lines_removed" != "0" ] && line2+=" ${red}-${lines_removed}${reset}"
 fi
 
-# ===== Update check (cached, 24h TTL) =====
-version_cache_file="/tmp/claude/statusline-version-cache.json"
-version_cache_max_age=86400  # 24 hours
+# ===== Claude Code update check (cached, 24h TTL) =====
+if [ -n "$cc_version" ] && [ "$cc_version" != "null" ]; then
+    cc_version_cache="/tmp/claude/statusline-cc-version-cache.txt"
+    cc_cache_max_age=86400
 
-version_needs_refresh=true
-version_data=""
-
-if [ -f "$version_cache_file" ]; then
-    vc_mtime=$(stat -c %Y "$version_cache_file" 2>/dev/null || stat -f %m "$version_cache_file" 2>/dev/null)
-    vc_now=$(date +%s)
-    vc_age=$(( vc_now - vc_mtime ))
-    if [ "$vc_age" -lt "$version_cache_max_age" ]; then
-        version_needs_refresh=false
+    cc_latest=""
+    if [ -f "$cc_version_cache" ] && [ -s "$cc_version_cache" ]; then
+        cc_mtime=$(stat -c %Y "$cc_version_cache" 2>/dev/null || stat -f %m "$cc_version_cache" 2>/dev/null)
+        cc_now=$(date +%s)
+        cc_age=$(( cc_now - cc_mtime ))
+        if [ "$cc_age" -lt "$cc_cache_max_age" ]; then
+            cc_latest=$(cat "$cc_version_cache" 2>/dev/null)
+        fi
     fi
-    version_data=$(cat "$version_cache_file" 2>/dev/null)
-fi
 
-if $version_needs_refresh; then
-    touch "$version_cache_file" 2>/dev/null
-    vc_response=$(curl -s --max-time 5 \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/daniel3303/ClaudeCodeStatusLine/releases/latest" 2>/dev/null)
-    if [ -n "$vc_response" ] && echo "$vc_response" | jq -e '.tag_name' >/dev/null 2>&1; then
-        version_data="$vc_response"
-        echo "$vc_response" > "$version_cache_file"
+    if [ -z "$cc_latest" ]; then
+        touch "$cc_version_cache" 2>/dev/null
+        cc_latest=$(npm view @anthropic-ai/claude-code version 2>/dev/null)
+        [ -n "$cc_latest" ] && echo "$cc_latest" > "$cc_version_cache"
     fi
-fi
 
-update_line=""
-if [ -n "$version_data" ]; then
-    latest_tag=$(echo "$version_data" | jq -r '.tag_name // empty')
-    if [ -n "$latest_tag" ] && version_gt "$latest_tag" "$VERSION"; then
-        update_line="\n${dim}Update available: ${latest_tag} → https://github.com/daniel3303/ClaudeCodeStatusLine${reset}"
+    if [ -n "$cc_latest" ] && version_gt "$cc_latest" "$cc_version"; then
+        line2+="${sep}${yellow}CC update: ${cc_version} → ${cc_latest}${reset}"
     fi
 fi
 
 # Output
 output="$out"
 [ -n "$line2" ] && output+="\n${line2}"
-[ -n "$update_line" ] && output+="$update_line"
 printf "%b" "$output"
 
 exit 0
