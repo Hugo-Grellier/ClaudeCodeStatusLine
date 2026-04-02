@@ -1,6 +1,7 @@
 #!/bin/bash
 # Source: https://github.com/daniel3303/ClaudeCodeStatusLine
-# Single line: Model | tokens | %used | %remain | think | 5h bar @reset | 7d bar @reset | extra
+# Line 1: Model | Bar Used/Total (%) | effort | 5h @reset | 7d @reset | extra
+# Line 2: CWD@Branch | git changes
 
 set -f  # disable globbing
 VERSION="1.2.0"
@@ -33,11 +34,6 @@ format_tokens() {
     else
         printf "%d" "$num"
     fi
-}
-
-# Format number with commas (e.g., 134,938)
-format_commas() {
-    printf "%'d" "$1"
 }
 
 # Return color escape based on usage percentage
@@ -91,11 +87,6 @@ if [ "$size" -gt 0 ]; then
 else
     pct_used=0
 fi
-pct_remain=$(( 100 - pct_used ))
-
-used_comma=$(format_commas $current)
-remain_comma=$(format_commas $(( size - current )))
-
 # Check reasoning effort
 settings_path="$claude_config_dir/settings.json"
 effort_level="medium"
@@ -106,26 +97,32 @@ elif [ -f "$settings_path" ]; then
     [ -n "$effort_val" ] && effort_level="$effort_val"
 fi
 
-# ===== Build single-line output =====
-out=""
-out+="${blue}${model_name}${reset}"
+# ===== Build context progress bar =====
+bar_width=10
+filled=$(( pct_used * bar_width / 100 ))
+empty=$(( bar_width - filled ))
+bar_color=$(usage_color "$pct_used")
+ctx_bar="${bar_color}"
+for ((i=0; i<filled; i++)); do ctx_bar+="█"; done
+for ((i=0; i<empty; i++)); do ctx_bar+="░"; done
+ctx_bar+="${reset}"
 
-# Current working directory
+# ===== Extract cwd and git info =====
 cwd=$(echo "$input" | jq -r '.cwd // empty')
+display_dir=""
+git_branch=""
+git_stat=""
 if [ -n "$cwd" ]; then
     display_dir="${cwd##*/}"
     git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    out+=" ${dim}|${reset} "
-    out+="${cyan}${display_dir}${reset}"
-    if [ -n "$git_branch" ]; then
-        out+="${dim}@${reset}${green}${git_branch}${reset}"
-        git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
-        [ -n "$git_stat" ] && out+=" ${dim}(${reset}${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}${dim})${reset}"
-    fi
+    git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
 fi
 
-out+=" ${dim}|${reset} "
-out+="${orange}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${green}${pct_used}%${reset}${dim})${reset}"
+# ===== Build line 1: model | bar used/total (%) | effort | 5h | 7d | extra =====
+out=""
+out+="${blue}${model_name}${reset}"
+bar_color_code=$(usage_color $pct_used)
+out+=" ${dim}|${reset} ${ctx_bar} ${bar_color_code}${used_tokens}/${total_tokens}${reset} ${dim}(${reset}${bar_color_code}${pct_used}%${reset}${dim})${reset}"
 out+=" ${dim}|${reset} "
 out+="effort: "
 case "$effort_level" in
@@ -382,6 +379,18 @@ else
     out+="${sep}${white}7d${reset} ${dim}-${reset}"
 fi
 
+# ===== Build line 2: CWD@Branch | git changes =====
+line2=""
+if [ -n "$display_dir" ]; then
+    line2+="${cyan}${display_dir}${reset}"
+    if [ -n "$git_branch" ]; then
+        line2+="${dim}@${reset}${green}${git_branch}${reset}"
+    fi
+    if [ -n "$git_stat" ]; then
+        line2+=" ${dim}|${reset} ${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}"
+    fi
+fi
+
 # ===== Update check (cached, 24h TTL) =====
 version_cache_file="/tmp/claude/statusline-version-cache.json"
 version_cache_max_age=86400  # 24 hours
@@ -419,6 +428,9 @@ if [ -n "$version_data" ]; then
 fi
 
 # Output
-printf "%b" "$out$update_line"
+output="$out"
+[ -n "$line2" ] && output+="\n${line2}"
+[ -n "$update_line" ] && output+="$update_line"
+printf "%b" "$output"
 
 exit 0
