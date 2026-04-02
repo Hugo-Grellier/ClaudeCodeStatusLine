@@ -1,7 +1,7 @@
 #!/bin/bash
 # Source: https://github.com/daniel3303/ClaudeCodeStatusLine
-# Line 1: Model | Bar Used/Total (%) | effort | 5h @reset | 7d @reset | extra
-# Line 2: CWD@Branch | git changes
+# Line 1: Model | Bar Used/Total (%) | effort | 5h @reset | 7d @reset | extra | duration | $cost (d/w)
+# Line 2: CWD@Branch | git changes | session lines | CC update (if available)
 
 set -f  # disable globbing
 
@@ -77,6 +77,7 @@ eval "$(echo "$input" | jq -r '
     " lines_added=" + s(.cost.total_lines_added; "") +
     " lines_removed=" + s(.cost.total_lines_removed; "") +
     " cwd=" + s(.cwd; "") +
+    " session_id=" + s(.session_id; "") +
     " cc_version=" + s(.version; "") +
     " builtin_five_hour_pct=" + s(.rate_limits.five_hour.used_percentage; "") +
     " builtin_five_hour_reset=" + s(.rate_limits.five_hour.resets_at; "") +
@@ -236,9 +237,9 @@ fi
 # Fall back to cached API call only when Claude Code didn't supply rate_limits data
 claude_config_dir_hash=$(echo -n "$claude_config_dir" | shasum -a 256 2>/dev/null || echo -n "$claude_config_dir" | sha256sum 2>/dev/null)
 claude_config_dir_hash=$(echo "$claude_config_dir_hash" | cut -c1-8)
-cache_file="/tmp/claude/statusline-usage-cache-${claude_config_dir_hash}.json"
+cache_file="${claude_config_dir}/statusline-cache/statusline-usage-cache-${claude_config_dir_hash}.json"
 cache_max_age=60  # seconds between API calls
-mkdir -p /tmp/claude
+mkdir -p ${claude_config_dir}/statusline-cache
 
 needs_refresh=true
 usage_data=""
@@ -411,7 +412,14 @@ else
     out+="${sep}${white}7d${reset} ${dim}-${reset}"
 fi
 
-# ===== Cost (session) =====
+# ===== Session duration =====
+if [ -n "$duration_str" ]; then
+    out+="${sep}${dim}${duration_str}${reset}"
+fi
+
+# ===== Cost (session + daily + weekly tracker) =====
+cost_cache_dir="${claude_config_dir}/statusline-cache"
+cost_tracker="${cost_cache_dir}/statusline-cost-$(date +%Y-%m-%d).tsv"
 if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
     formatted_cost=$(LC_NUMERIC=C awk "BEGIN {printf \"%.2f\", $cost_usd}")
     cost_cents=$(LC_NUMERIC=C awk "BEGIN {printf \"%.0f\", $cost_usd * 100}")
@@ -420,12 +428,56 @@ if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
     elif [ "$cost_cents" -ge 200 ]; then cost_color="$yellow"
     else cost_color="$green"
     fi
-    out+="${sep}${cost_color}\$${formatted_cost}${reset}"
-fi
 
-# ===== Session duration =====
-if [ -n "$duration_str" ]; then
-    out+="${sep}${dim}${duration_str}${reset}"
+    # Track cost per session_id in daily file
+    if [ -n "$session_id" ] && [ "$session_id" != "null" ]; then
+        if [ -f "$cost_tracker" ]; then
+            grep -v "^${session_id}	" "$cost_tracker" > "${cost_tracker}.tmp" 2>/dev/null || true
+            mv "${cost_tracker}.tmp" "$cost_tracker"
+        fi
+        echo "${session_id}	${cost_usd}" >> "$cost_tracker"
+
+        # Sum today
+        daily_cost=$(LC_NUMERIC=C awk -F'\t' '{s+=$2} END {printf "%.2f", s}' "$cost_tracker" 2>/dev/null)
+
+        # Sum from 7-day reset window start (reset_epoch - 7 days) to today
+        # Use builtin 7d reset if available, otherwise fall back to last 7 days
+        week_start_epoch=""
+        if [ -n "$builtin_seven_day_reset" ] && [ "$builtin_seven_day_reset" != "null" ]; then
+            week_start_epoch=$(( builtin_seven_day_reset - 7 * 86400 ))
+        fi
+        weekly_cost="0.00"
+        for i in 0 1 2 3 4 5 6 7 8 9; do
+            day_date=$(date -d "-${i} days" +%Y-%m-%d 2>/dev/null || date -v-${i}d +%Y-%m-%d 2>/dev/null)
+            # Stop if this day is before the window start
+            if [ -n "$week_start_epoch" ]; then
+                day_epoch=$(date -d "$day_date" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$day_date" +%s 2>/dev/null)
+                [ -n "$day_epoch" ] && [ "$day_epoch" -lt "$week_start_epoch" ] && break
+            elif [ "$i" -ge 7 ]; then
+                break
+            fi
+            day_file="${cost_cache_dir}/statusline-cost-${day_date}.tsv"
+            [ -f "$day_file" ] && weekly_cost=$(LC_NUMERIC=C awk -F'\t' -v w="$weekly_cost" '{s+=$2} END {printf "%.2f", s+w}' "$day_file")
+        done
+
+        daily_cents=$(LC_NUMERIC=C awk "BEGIN {printf \"%.0f\", $daily_cost * 100}")
+        weekly_cents=$(LC_NUMERIC=C awk "BEGIN {printf \"%.0f\", $weekly_cost * 100}")
+
+        if [ "$daily_cents" -ge 1000 ]; then daily_color="$red"
+        elif [ "$daily_cents" -ge 500 ]; then daily_color="$orange"
+        elif [ "$daily_cents" -ge 200 ]; then daily_color="$yellow"
+        else daily_color="$green"
+        fi
+        if [ "$weekly_cents" -ge 5000 ]; then weekly_color="$red"
+        elif [ "$weekly_cents" -ge 2000 ]; then weekly_color="$orange"
+        elif [ "$weekly_cents" -ge 1000 ]; then weekly_color="$yellow"
+        else weekly_color="$green"
+        fi
+
+        out+="${sep}${cost_color}\$${formatted_cost}${reset} ${dim}(${reset}${daily_color}\$${daily_cost}${reset}${dim}/d${reset} ${weekly_color}\$${weekly_cost}${reset}${dim}/w)${reset}"
+    else
+        out+="${sep}${cost_color}\$${formatted_cost}${reset}"
+    fi
 fi
 
 # ===== Build line 2: CWD@Branch | git changes | session lines =====
@@ -450,7 +502,7 @@ fi
 
 # ===== Claude Code update check (cached, 24h TTL) =====
 if [ -n "$cc_version" ] && [ "$cc_version" != "null" ]; then
-    cc_version_cache="/tmp/claude/statusline-cc-version-cache.txt"
+    cc_version_cache="${claude_config_dir}/statusline-cache/statusline-cc-version-cache.txt"
     cc_cache_max_age=86400
 
     cc_latest=""
