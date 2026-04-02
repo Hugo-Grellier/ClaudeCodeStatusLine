@@ -4,7 +4,6 @@
 # Line 2: CWD@Branch | git changes
 
 set -f  # disable globbing
-VERSION="1.2.0"
 
 input=$(cat)
 
@@ -65,18 +64,30 @@ version_gt() {
     [ "$a3" -gt "$b3" ] 2>/dev/null && return 0
     return 1
 }
-# ===== Extract data from JSON =====
-model_name=$(echo "$input" | jq -r '.model.display_name // "Claude"')
-model_name=$(echo "$model_name" | sed 's/ *(\([0-9.]*[kKmM]*\) context)/ \1/')  # "(1M context)" → "1M"
+# ===== Extract all data from JSON in a single jq call =====
+eval "$(echo "$input" | jq -r '
+    def s(v; d): v // d | @sh;
+    "model_name=" + s(.model.display_name; "Claude") +
+    " size=" + s(.context_window.context_window_size; "200000") +
+    " input_tokens=" + s(.context_window.current_usage.input_tokens; "0") +
+    " cache_create=" + s(.context_window.current_usage.cache_creation_input_tokens; "0") +
+    " cache_read=" + s(.context_window.current_usage.cache_read_input_tokens; "0") +
+    " cost_usd=" + s(.cost.total_cost_usd; "") +
+    " duration_ms=" + s(.cost.total_duration_ms; "") +
+    " lines_added=" + s(.cost.total_lines_added; "") +
+    " lines_removed=" + s(.cost.total_lines_removed; "") +
+    " cwd=" + s(.cwd; "") +
+    " cc_version=" + s(.version; "") +
+    " builtin_five_hour_pct=" + s(.rate_limits.five_hour.used_percentage; "") +
+    " builtin_five_hour_reset=" + s(.rate_limits.five_hour.resets_at; "") +
+    " builtin_seven_day_pct=" + s(.rate_limits.seven_day.used_percentage; "") +
+    " builtin_seven_day_reset=" + s(.rate_limits.seven_day.resets_at; "")
+')"
 
-# Context window
-size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+# Shorten model name: "(1M context)" → "1M"
+model_name=$(echo "$model_name" | sed 's/ *(\([0-9.]*[kKmM]*\) context)/ \1/')
+
 [ "$size" -eq 0 ] 2>/dev/null && size=200000
-
-# Token usage
-input_tokens=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
-cache_create=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
-cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
 current=$(( input_tokens + cache_create + cache_read ))
 
 used_tokens=$(format_tokens $current)
@@ -107,12 +118,6 @@ for ((i=0; i<filled; i++)); do ctx_bar+="█"; done
 for ((i=0; i<empty; i++)); do ctx_bar+="░"; done
 ctx_bar+="${reset}"
 
-# ===== Extract cost and session data from JSON input =====
-cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
-duration_ms=$(echo "$input" | jq -r '.cost.total_duration_ms // empty')
-lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // empty')
-lines_removed=$(echo "$input" | jq -r '.cost.total_lines_removed // empty')
-
 # ===== Format session duration =====
 duration_str=""
 if [ -n "$duration_ms" ] && [ "$duration_ms" != "null" ]; then
@@ -129,8 +134,7 @@ if [ -n "$duration_ms" ] && [ "$duration_ms" != "null" ]; then
     fi
 fi
 
-# ===== Extract cwd and git info =====
-cwd=$(echo "$input" | jq -r '.cwd // empty')
+# ===== Extract git info =====
 display_dir=""
 git_branch=""
 git_changes=""
@@ -223,14 +227,7 @@ get_oauth_token() {
     echo ""
 }
 
-# ===== LINE 2 & 3: Usage limits with progress bars =====
-# First, try to use rate_limits data provided directly by Claude Code in the JSON input.
-# This is the most reliable source — no OAuth token or API call required.
-builtin_five_hour_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-builtin_five_hour_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
-builtin_seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-builtin_seven_day_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
-
+# ===== Usage limits =====
 use_builtin=false
 if [ -n "$builtin_five_hour_pct" ] || [ -n "$builtin_seven_day_pct" ]; then
     use_builtin=true
