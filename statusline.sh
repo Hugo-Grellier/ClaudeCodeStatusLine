@@ -107,8 +107,27 @@ for ((i=0; i<filled; i++)); do ctx_bar+="█"; done
 for ((i=0; i<empty; i++)); do ctx_bar+="░"; done
 ctx_bar+="${reset}"
 
-# ===== Extract cost from JSON input =====
+# ===== Extract cost and session data from JSON input =====
 cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+duration_ms=$(echo "$input" | jq -r '.cost.total_duration_ms // empty')
+lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // empty')
+lines_removed=$(echo "$input" | jq -r '.cost.total_lines_removed // empty')
+
+# ===== Format session duration =====
+duration_str=""
+if [ -n "$duration_ms" ] && [ "$duration_ms" != "null" ]; then
+    total_sec=$(( ${duration_ms%.*} / 1000 ))
+    if [ "$total_sec" -ge 3600 ]; then
+        dur_h=$(( total_sec / 3600 ))
+        dur_m=$(( (total_sec % 3600) / 60 ))
+        duration_str="${dur_h}h${dur_m}m"
+    elif [ "$total_sec" -ge 60 ]; then
+        dur_m=$(( total_sec / 60 ))
+        duration_str="${dur_m}m"
+    else
+        duration_str="${total_sec}s"
+    fi
+fi
 
 # ===== Extract cwd and git info =====
 cwd=$(echo "$input" | jq -r '.cwd // empty')
@@ -394,7 +413,12 @@ if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
     out+="${sep}${cost_color}\$${formatted_cost}${reset}"
 fi
 
-# ===== Build line 2: CWD@Branch | git changes =====
+# ===== Session duration =====
+if [ -n "$duration_str" ]; then
+    out+="${sep}${dim}${duration_str}${reset}"
+fi
+
+# ===== Build line 2: CWD@Branch | git changes | session lines =====
 line2=""
 if [ -n "$display_dir" ]; then
     line2+="${cyan}${display_dir}${reset}"
@@ -404,6 +428,14 @@ if [ -n "$display_dir" ]; then
     if [ -n "$git_stat" ]; then
         line2+=" ${dim}|${reset} ${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}"
     fi
+fi
+
+# Session lines added/removed
+if [ -n "$lines_added" ] && [ "$lines_added" != "null" ] && [ "$lines_added" != "0" ] || \
+   [ -n "$lines_removed" ] && [ "$lines_removed" != "null" ] && [ "$lines_removed" != "0" ]; then
+    line2+="${sep}${dim}session${reset}"
+    [ -n "$lines_added" ] && [ "$lines_added" != "null" ] && [ "$lines_added" != "0" ] && line2+=" ${green}+${lines_added}${reset}"
+    [ -n "$lines_removed" ] && [ "$lines_removed" != "null" ] && [ "$lines_removed" != "0" ] && line2+=" ${red}-${lines_removed}${reset}"
 fi
 
 # ===== Update check (cached, 24h TTL) =====
