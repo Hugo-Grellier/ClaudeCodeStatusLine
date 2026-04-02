@@ -107,6 +107,9 @@ for ((i=0; i<filled; i++)); do ctx_bar+="█"; done
 for ((i=0; i<empty; i++)); do ctx_bar+="░"; done
 ctx_bar+="${reset}"
 
+# ===== Extract cost from JSON input =====
+cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+
 # ===== Extract cwd and git info =====
 cwd=$(echo "$input" | jq -r '.cwd // empty')
 display_dir=""
@@ -377,6 +380,18 @@ else
     # No valid usage data — show placeholders
     out+="${sep}${white}5h${reset} ${dim}-${reset}"
     out+="${sep}${white}7d${reset} ${dim}-${reset}"
+fi
+
+# ===== Cost (session) =====
+if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
+    formatted_cost=$(LC_NUMERIC=C awk "BEGIN {printf \"%.2f\", $cost_usd}")
+    cost_cents=$(LC_NUMERIC=C awk "BEGIN {printf \"%.0f\", $cost_usd * 100}")
+    if [ "$cost_cents" -ge 1000 ]; then cost_color="$red"
+    elif [ "$cost_cents" -ge 500 ]; then cost_color="$orange"
+    elif [ "$cost_cents" -ge 200 ]; then cost_color="$yellow"
+    else cost_color="$green"
+    fi
+    out+="${sep}${cost_color}\$${formatted_cost}${reset}"
 fi
 
 # ===== Build line 2: CWD@Branch | git changes =====
