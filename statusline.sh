@@ -440,19 +440,18 @@ if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
         # Sum today
         daily_cost=$(LC_NUMERIC=C awk -F'\t' '{s+=$2} END {printf "%.2f", s}' "$cost_tracker" 2>/dev/null)
 
-        # Sum from 7-day reset window start (reset_epoch - 7 days) to today
-        # Use builtin 7d reset if available, otherwise fall back to last 7 days
-        week_start_epoch=""
+        # Sum from 7-day reset window start date to today
+        week_start_date=""
         if [ -n "$builtin_seven_day_reset" ] && [ "$builtin_seven_day_reset" != "null" ]; then
             week_start_epoch=$(( builtin_seven_day_reset - 7 * 86400 ))
+            week_start_date=$(date -d "@$week_start_epoch" +%Y-%m-%d 2>/dev/null || date -j -r "$week_start_epoch" +%Y-%m-%d 2>/dev/null)
         fi
         weekly_cost="0.00"
         for i in 0 1 2 3 4 5 6 7 8 9; do
             day_date=$(date -d "-${i} days" +%Y-%m-%d 2>/dev/null || date -v-${i}d +%Y-%m-%d 2>/dev/null)
-            # Stop if this day is before the window start
-            if [ -n "$week_start_epoch" ]; then
-                day_epoch=$(date -d "$day_date" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$day_date" +%s 2>/dev/null)
-                [ -n "$day_epoch" ] && [ "$day_epoch" -lt "$week_start_epoch" ] && break
+            # Stop if this day is before the window start date
+            if [ -n "$week_start_date" ]; then
+                [[ "$day_date" < "$week_start_date" ]] && break
             elif [ "$i" -ge 7 ]; then
                 break
             fi
