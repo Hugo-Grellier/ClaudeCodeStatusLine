@@ -133,11 +133,24 @@ fi
 cwd=$(echo "$input" | jq -r '.cwd // empty')
 display_dir=""
 git_branch=""
-git_stat=""
+git_changes=""
 if [ -n "$cwd" ]; then
     display_dir="${cwd##*/}"
     git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    git_stat=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
+    if [ -n "$git_branch" ]; then
+        # Staged changes
+        staged=$(git -C "${cwd}" diff --cached --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
+        # Unstaged changes
+        unstaged=$(git -C "${cwd}" diff --numstat 2>/dev/null | awk '{a+=$1; d+=$2} END {if (a+d>0) printf "+%d -%d", a, d}')
+        # Untracked file count
+        untracked=$(git -C "${cwd}" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+
+        parts=""
+        [ -n "$staged" ] && parts+="${green}●${reset}${staged}"
+        [ -n "$unstaged" ] && { [ -n "$parts" ] && parts+=" "; parts+="${orange}●${reset}${unstaged}"; }
+        [ "$untracked" -gt 0 ] 2>/dev/null && { [ -n "$parts" ] && parts+=" "; parts+="${red}?${untracked}${reset}"; }
+        git_changes="$parts"
+    fi
 fi
 
 # ===== Build line 1: model | bar used/total (%) | effort | 5h | 7d | extra =====
@@ -425,8 +438,8 @@ if [ -n "$display_dir" ]; then
     if [ -n "$git_branch" ]; then
         line2+="${dim}@${reset}${green}${git_branch}${reset}"
     fi
-    if [ -n "$git_stat" ]; then
-        line2+=" ${dim}|${reset} ${green}${git_stat%% *}${reset} ${red}${git_stat##* }${reset}"
+    if [ -n "$git_changes" ]; then
+        line2+="${sep}${git_changes}"
     fi
 fi
 
