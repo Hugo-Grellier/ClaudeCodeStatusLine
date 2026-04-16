@@ -525,8 +525,29 @@ if [ -n "$cc_version" ] && [ "$cc_version" != "null" ]; then
     fi
 fi
 
+# ===== Caveman mode badge =====
+caveman_flag="${claude_config_dir}/.caveman-active"
+caveman_badge=""
+if [ ! -L "$caveman_flag" ] && [ -f "$caveman_flag" ]; then
+    caveman_mode=$(head -c 64 "$caveman_flag" 2>/dev/null | tr -d '\n\r' | tr '[:upper:]' '[:lower:]')
+    caveman_mode=$(printf '%s' "$caveman_mode" | tr -cd 'a-z0-9-')
+    case "$caveman_mode" in
+        off|lite|full|ultra|wenyan-lite|wenyan|wenyan-full|wenyan-ultra|commit|review|compress)
+            if [ "$caveman_mode" = "off" ]; then
+                caveman_badge=""
+            elif [ -z "$caveman_mode" ] || [ "$caveman_mode" = "full" ]; then
+                caveman_badge="\033[38;5;172m[CAVEMAN]\033[0m"
+            else
+                caveman_suffix=$(printf '%s' "$caveman_mode" | tr '[:lower:]' '[:upper:]')
+                caveman_badge="\033[38;5;172m[CAVEMAN:${caveman_suffix}]\033[0m"
+            fi
+            ;;
+    esac
+fi
+
 # Output
 output="$out"
+[ -n "$caveman_badge" ] && output+=" ${dim}|${reset} ${caveman_badge}"
 [ -n "$line2" ] && output+="\n${line2}"
 printf "%b" "$output"
 
